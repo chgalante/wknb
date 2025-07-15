@@ -1,0 +1,45 @@
+#!/usr/bin/env zsh
+#
+# flash – copy a UF2 file to a Raspberry Pi Pico 2 presented
+#         as a mass-storage device labelled  RP2350.
+#
+# Usage:  ./flash path/to/firmware.uf2
+# Exit:   0 = success, 2 = user-input error
+
+set -e  # abort on error          (zsh’s -e behaves like bash)  # :contentReference[oaicite:0]{index=0}
+set -o pipefail                   # same option name in zsh     # :contentReference[oaicite:1]{index=1}
+set -u  # abort on undefined vars
+
+# ── 1. Strict input validation ──────────────────────────────────────────────
+(( $# == 1 ))  || { print -u2 "Error: exactly one argument required."; exit 2; }
+
+UF2=$1
+[[ -f $UF2 ]] || { print -u2 "Error: '$UF2' is not a regular file."; exit 2; }  # :contentReference[oaicite:2]{index=2}
+
+# case-insensitive *.uf2 check (zsh supports ${var:l} to lowercase)            # :contentReference[oaicite:3]{index=3}
+[[ ${${UF2##*/}:l} == *.uf2 ]] || { print -u2 "Error: argument must end in .uf2"; exit 2; }
+
+UF2=$(realpath -- "$UF2")  # resolve to absolute path                         # :contentReference[oaicite:4]{index=4}
+
+# ── 2. Locate the RP2350 volume ─────────────────────────────────────────────
+udevadm settle -t 5   # wait until udev finishes adding devices              # :contentReference[oaicite:5]{index=5}
+DEV=$(lsblk -o PATH,LABEL -l | awk '$2=="RP2350"{print $1}')
+
+if [[ -z $DEV ]]; then
+  print -u2 "Error: no drive labelled RP2350 found. Is the board in BOOTSEL mode?"
+  exit 2
+fi
+
+# ── 3. Mount, copy, sync, unmount ───────────────────────────────────────────
+print "Mounting $DEV at /mnt"
+sudo mount "$DEV" /mnt     # partition node; avoids fsconfig() error         # :contentReference[oaicite:6]{index=6}
+
+TRAPINT() { sudo umount /mnt; exit 130 }  # clean unmount on Ctrl-C
+TRAPTERM() { sudo umount /mnt; exit 143 }
+
+print "Copying $(basename $UF2)…"
+sudo cp -- "$UF2" /mnt
+sync                      # flush caches                                      # :contentReference[oaicite:7]{index=7}
+sudo umount /mnt
+
+print "Flashed $(basename $UF2); board rebooted."

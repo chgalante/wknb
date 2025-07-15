@@ -1,0 +1,65 @@
+# Build artifacts
+build*/
+*.o
+*.a
+*.d
+*.cmd
+*.log
+*.bin
+*.elf
+*.uf2
+
+# West-managed dependencies (cloned by west)
+zephyr/
+modules/
+tools/
+bootloader/
+
+# Cache and temporary files
+.cache/
+.west/
+*.pyc
+*.swp
+*.swo
+*~
+
+# IDE and editor files
+.vscode/
+.idea/
+.settings/
+.*project
+.clangd/
+.DS_Store
+
+# Environment files
+.envrc
+venv/
+.venv/
+
+# Tag files
+GPATH
+GRTAGS
+GTAGS
+TAGS
+tags
+cscope.*
+
+# Test and CI output
+twister-out*
+sanity-out*
+compliance.xml
+coverage-report
+*.xml
+
+# Documentation build
+doc/_build/
+doc/doxygen/
+doc/html/
+doc/latex/
+
+# Backup files
+*.patch
+*.bak
+
+# Only keep source code and configuration
+# Keep: app/, prj.conf, CMakeLists.txt, west.yml, README, etc.
