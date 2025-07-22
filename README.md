@@ -1,135 +1,86 @@
 # wknb
-wknb is a wired USB device that can be used to wake-up your PC, suspend it, 
-change video outputs and control the volume remotely. This device was developed 
-because I wanted a convenient way to play videogames from my couch, using my PC 
-that is set-up in my office. The device is built with Zephyr RTOS and currently 
-only converts rotary encoder input into volume control commands for your 
-computer. The feature to wake-up, suspend and change video inputs are still a 
-work in progress.
 
-## Overview
+wknb is a wired USB volume control device that lets you adjust your computer's 
+volume remotely using a rotary encoder. Perfect for controlling audio from your 
+couch while gaming or watching movies on a PC located in another room.
 
-This project implements a USB HID Consumer Control device using a Raspberry Pi 
-Pico 2 (RP2350) and a rotary encoder. The device sends volume up/down commands 
-to the host computer when the encoder is rotated, with configurable sensitivity 
-to prevent accidental volume changes.
+## What It Does
 
-## Hardware
+- **Volume Control**: Turn the rotary encoder to adjust your computer's volume up or down
+- **Smart Sensitivity**: Requires multiple encoder clicks before changing volume to prevent accidental adjustments
+- **Plug & Play**: Works as a standard USB HID device - no drivers needed
 
-### Components
+## Planned Features (Work in Progress)
+
+- Wake up your PC remotely
+- Suspend/sleep your computer
+- Switch between video outputs
+
+## Hardware Requirements
+
 - **Microcontroller**: Raspberry Pi Pico 2 (RP2350)
-- **Rotary Encoder**: Bourns PEC12R-4025F-S0024-ND (or compatible quadrature encoder)
-- **Status LED**: Onboard LED (GPIO 25)
+- **Input**: Rotary encoder (Bourns PEC12R-4025F-S0024-ND or compatible)
+- **Connection**: USB cable to your computer
 
-### Pin Configuration
-| Component | GPIO Pin | Configuration |
-|-----------|----------|---------------|
-| Rotary A  | 14       | Input with internal pull-up |
-| Rotary B  | 15       | Input with internal pull-up |
-| LED       | 25       | Output (onboard LED) |
+## Pin Configuration
 
-### Wiring
-- Connect rotary encoder's A and B pins to GPIO 14 and 15 respectively
-- Connect encoder's common pin to ground
-- The RP2350's internal pull-up resistors (~50-60kΩ) are used, so no external resistors needed
+Connect the rotary encoder to the Raspberry Pi Pico 2 as follows:
 
-## Features
+| Component | Pico 2 Pin | GPIO | Configuration |
+|-----------|------------|------|---------------|
+| Rotary A  | Pin 14     | GP10 | Input with internal pull-up |
+| Rotary B  | Pin 15     | GP11 | Input with internal pull-up |
+| Button    | Pin 16     | GP12 | Input with internal pull-down |
+| LED       | Pin 25     | GP25 | Output (onboard LED) |
 
-- **USB HID Consumer Control**: Appears as a standard HID device to the host OS
-- **Quadrature Decoding**: Proper rotary encoder state machine for reliable direction detection
-- **Configurable Sensitivity**: Requires 6 detents before sending volume command (prevents accidental changes)
-- **Visual Feedback**: LED blinks on startup and indicates rotation direction
-- **Debounced Input**: 10ms polling interval with proper state transition handling
-
-## Software Architecture
-
-### Key Components
-- **USB HID Stack**: Zephyr's USB HID class driver
-- **GPIO Polling**: Direct GPIO polling with quadrature state machine
-- **Consumer Control**: Standard HID usage codes for volume up/down (0xE9/0xEA)
-
-### Configuration
-- `NUMBER_OF_DETENTS_PER_REPORT`: Set to 6 (adjustable sensitivity)
-- USB VID/PID: 0x1234/0x5678 (customize in `prj.conf`)
-- Device name: "Rotary Encoder"
+**Notes:**
+- The rotary encoder pins (A/B) use internal pull-up resistors (~50-60kΩ) since they are normally high and grounded by the encoder
+- The button pin uses internal pull-down resistor since it's normally low and pulled high when pressed
+- The onboard LED (GP25) provides visual feedback for rotation and startup
 
 ## Building and Flashing
 
 ### Prerequisites
-- Zephyr SDK and toolchain
-- CMake and Ninja build system
-- West tool for Zephyr project management
+- Zephyr RTOS development environment
+- CMake and Ninja build tools
+- West tool for Zephyr
 
-### Build Commands
+### Build Instructions
 ```bash
-# Clean build
+# Clean build (if needed)
 rm -rf build && cmake -B build
 
-# Build the project
+# Build the firmware
 ninja -C build
-# or
-cmake --build build
+# or alternatively: cmake --build build
 ```
 
-### Flashing
-```bash
-# Flash to RP2350 (requires device in bootloader mode)
-./flash build/zephyr/zephyr.uf2
-```
+### Flashing to Raspberry Pi Pico 2
+1. **Enter bootloader mode**: Hold the BOOTSEL button while connecting the Pico 2 to your computer
+2. **Flash the firmware**: Run the custom flash script
+   ```bash
+   ./flash build/zephyr/zephyr.uf2
+   ```
+3. **Verify**: The device should restart and the LED should blink on startup
 
-The custom `flash` script handles the RP2350's UF2 bootloader protocol.
+The custom `flash` script handles copying the UF2 file to the RP2350 bootloader mass storage device.
+
+## Setup
+
+1. **Build the Hardware**: Connect the rotary encoder to the Raspberry Pi Pico 2 using the pin configuration above
+2. **Flash the Firmware**: Follow the building and flashing instructions
+3. **Connect**: Plug the device into your computer via USB
+4. **Use**: Turn the encoder to control volume
+
+The device appears as a standard HID input device and works with Windows, macOS, and Linux without additional drivers.
 
 ## Usage
 
-1. Connect the device to your computer via USB
-2. The device will appear as a HID Consumer Control device
-3. Rotate the encoder clockwise to increase volume
-4. Rotate the encoder counter-clockwise to decrease volume
+- **Clockwise rotation**: Increases volume
+- **Counter-clockwise rotation**: Decreases volume
+- **LED indicator**: Blinks on startup and shows rotation feedback
 
-### Startup Sequence
-- Device blinks LED 3 times on startup to indicate successful initialization
-- USB HID interface is registered and ready for use
-
-## Customization
-
-### Sensitivity Adjustment
-Modify `NUMBER_OF_DETENTS_PER_REPORT` in `main.c` to change how many encoder detents are required before sending a volume command:
-- Lower values = more sensitive (faster volume changes)
-- Higher values = less sensitive (prevents accidental changes)
-
-### USB Device Information
-Edit `app/prj.conf` to customize:
-- `CONFIG_USB_DEVICE_PRODUCT`: Device name
-- `CONFIG_USB_DEVICE_MANUFACTURER`: Manufacturer name  
-- `CONFIG_USB_DEVICE_VID/PID`: USB Vendor/Product IDs
-
-### HID Commands
-The device currently sends volume up/down commands. Modify the HID report descriptor and command codes in `main.c` to support other media keys or functions.
-
-## Troubleshooting
-
-### Device Not Recognized
-- Ensure USB cable supports data transfer (not just power)
-- Check that the device appears in system device manager/lsusb
-- Verify USB HID drivers are installed
-
-### Encoder Not Responding
-- Check wiring connections to GPIO 14/15
-- Verify encoder common pin is connected to ground
-- Monitor debug output via UART console (GPIO 0/1)
-
-### Sensitivity Issues
-- Adjust `NUMBER_OF_DETENTS_PER_REPORT` value
-- Check encoder mechanical specifications (detents per revolution)
-- Verify quadrature signals with oscilloscope if available
-
-## Development
-
-### Code Style
-Follows Zephyr RTOS conventions:
-- Linux kernel style formatting
-- Snake_case naming
-- Zephyr-specific types and APIs
+The device requires 6 encoder detents (clicks) before sending a volume command, preventing accidental volume changes from small movements.
 
 ## License
 
