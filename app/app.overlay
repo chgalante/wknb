@@ -4,10 +4,26 @@
         rotary-b = &gpio0;
         button = &gpio0;
     };
+
+    chosen {
+        zephyr,console = &cdc_acm_uart0;
+    };
 };
 
 &zephyr_udc0 {
     status = "okay";
+    
+    cdc_acm_uart0: cdc_acm_uart0 {
+        compatible = "zephyr,cdc-acm-uart";
+        label = "CDC_ACM_0";
+    };
+    
+    hid0: hid_dev_0 {
+        compatible = "zephyr,hid-device";
+        label = "HID0";
+        in-report-size = <16>;
+        in-polling-period-us = <1000>;
+    };
 };
 
 &gpio0 {
