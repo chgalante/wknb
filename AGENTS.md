@@ -1,8 +1,9 @@
 # AGENTS.md - Zephyr RTOS Project Guide
 
 ## Build Commands
-- **Build**: `ninja -C build` or `cmake --build build`
-- **Clean**: `ninja -C build clean` or `rm -rf build && cmake -B build`
+- **Setup**: `source ~/projects/wknb/.venv/bin/activate` (activate Python virtual environment)
+- **Debug Build**: `west build -b rpi_pico2/rp2350a/m33 app --pristine` (HID + CDC ACM console)
+- **Release Build**: `west build -b rpi_pico2/rp2350a/m33 app --pristine -- -DCONF_FILE=prj_release.conf -DDTC_OVERLAY_FILE=app_release.overlay` (HID only, no debug output)
 - **Flash**: `./flash build/zephyr/zephyr.uf2` (custom script for RP2350)
 
 ## Code Style (follows Zephyr conventions)
@@ -28,12 +29,22 @@
 - **USB HID**: Consumer Control interface for volume up/down commands
 
 ## Project Structure
-- `app/src/main.c` - Main application code (USB HID rotary encoder)
-- `app/prj.conf` - Zephyr configuration (USB, GPIO, logging)
+- `app/src/main.c` - Main application code (USB HID rotary encoder with wake-up)
+- `app/prj.conf` - Debug configuration (HID + CDC ACM console)
+- `app/prj_debug.conf` - Debug configuration (same as prj.conf)
+- `app/prj_release.conf` - Release configuration (HID only, no debug)
+- `app/app.overlay` - Debug device tree overlay (composite USB device)
+- `app/app_release.overlay` - Release device tree overlay (HID only)
 - `app/CMakeLists.txt` - Build configuration
 - `build/` - Build artifacts (ninja-based)
 - `flash` - Custom flashing script for RP2350 bootloader
 
 ## Testing
 - No automated tests configured - manual hardware testing required
-- Use `printk()` statements for debugging GPIO and USB HID events
+- **Debug Mode**: Use `DEBUG_PRINT()` statements for debugging GPIO and USB HID events
+- **Debug Console**: Access via `cat /dev/ttyACM0` or `minicom -D /dev/ttyACM0 -b 115200`
+- **Release Mode**: No debug output, `DEBUG_PRINT()` statements are compiled out
+
+## Configuration Modes
+- **Debug Mode** (default): Composite USB device with HID + CDC ACM console, debug output enabled
+- **Release Mode**: HID-only USB device, all debug output disabled for production use
