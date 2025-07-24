@@ -13,9 +13,10 @@ couch while gaming or watching movies on a PC located in another room.
 ## Features
 
 - **Volume Control**: Turn the rotary encoder to adjust your computer's volume up or down
-- **USB Remote Wake-up**: Press the button to wake up your PC from sleep/suspend mode
+- **USB Remote Wake-up**: Press the button to wake up your PC from sleep/suspend mode (fully implemented)
 - **Smart Sensitivity**: Requires multiple encoder clicks before changing volume to prevent accidental adjustments
 - **Plug & Play**: Works as a standard USB HID device - no drivers needed
+- **Auto Stay-Awake**: Device automatically maintains USB activity to keep volume controls responsive
 
 ## Planned Features (Work in Progress)
 
@@ -53,12 +54,14 @@ Connect the rotary encoder to the Raspberry Pi Pico 2 as follows:
 
 ### Build Instructions
 ```bash
-# Clean build (if needed)
-rm -rf build && cmake -B build
+# Activate the Python virtual environment
+source ~/projects/wknb/.venv/bin/activate
 
-# Build the firmware
-ninja -C build
-# or alternatively: cmake --build build
+# Debug build (with CDC ACM console for debugging)
+west build -b rpi_pico2/rp2350a/m33 app --pristine
+
+# Release build (HID only, no debug output)
+west build -b rpi_pico2/rp2350a/m33 app --pristine -- -DCONF_FILE=prj_release.conf -DDTC_OVERLAY_FILE=app_release.overlay
 ```
 
 ### Flashing to Raspberry Pi Pico 2
@@ -85,9 +88,23 @@ The device appears as a standard HID input device and works with Windows, macOS,
 - **Clockwise rotation**: Increases volume
 - **Counter-clockwise rotation**: Decreases volume
 - **Button press**: Wakes up PC from sleep/suspend (when USB remote wake-up is enabled by the host)
-- **LED indicator**: Blinks on startup, shows rotation feedback, and briefly lights up when wake-up is triggered
+- **LED indicator**: Blinks 3 times on startup, briefly lights up when wake-up is successful
+- **Auto-active**: Volume controls work immediately after plugging in (no button press required)
 
 The device requires 6 encoder detents (clicks) before sending a volume command, preventing accidental volume changes from small movements.
+
+### Wake-over-USB Setup
+
+For the wake-up feature to work, your computer must support and enable USB remote wake-up:
+
+**Windows**: 
+- Device Manager → USB controllers → Your USB device → Properties → Power Management → "Allow this device to wake the computer"
+
+**Linux**: 
+- Check `/proc/acpi/wakeup` or use `echo enabled > /sys/bus/usb/devices/.../power/wakeup`
+
+**macOS**: 
+- System Preferences → Energy Saver → "Wake for network access" (may vary by version)
 
 ## License
 

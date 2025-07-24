@@ -48,3 +48,25 @@
 ## Configuration Modes
 - **Debug Mode** (default): Composite USB device with HID + CDC ACM console, debug output enabled
 - **Release Mode**: HID-only USB device, all debug output disabled for production use
+
+## Wake-over-USB Implementation
+- **Purpose**: Device can wake up suspended USB host when button is pressed
+- **USB Remote Wakeup**: Enabled via `CONFIG_USB_DEVICE_REMOTE_WAKEUP=y`
+- **Button Wake**: Press button (pin 16) to send USB wake-up request when host is suspended
+- **LED Feedback**: LED blinks 3 times during bootup, flashes on successful wake-up
+- **Keep-alive Mechanism**: Sends null HID reports every 500ms to prevent USB suspension
+- **USB State Management**: Tracks suspend/resume states via `usb_status_cb()` callback
+
+## Key Functions
+- `send_usb_keepalive()` - Sends null HID report to maintain USB activity
+- `button_pressed()` - GPIO interrupt handler for wake-up button
+- `usb_status_cb()` - USB device status callback for suspend/resume events
+- **Volume Controls**: Rotary encoder sends Consumer Control HID reports (Volume Up/Down)
+- **Quadrature Decoding**: Uses state transition table for reliable encoder reading
+- **Detent Counting**: Requires 6 detents per volume command to prevent accidental triggers
+
+## USB Enumeration Best Practices
+- **Conservative Approach**: No wake-up requests during enumeration to avoid recognition issues
+- **Delayed Initialization**: 100ms startup delay for power stabilization
+- **Proper State Reset**: Handle USB_DC_RESET and USB_DC_DISCONNECTED events
+- **Debug Logging**: Enhanced USB state logging for troubleshooting enumeration issues
