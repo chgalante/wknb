@@ -18,6 +18,7 @@
 #define LED_PIN 25
 
 #define NUMBER_OF_DETENTS_PER_REPORT 6
+#define LONG_PRESS_DURATION_MS 2000
 
 static const struct gpio_dt_spec rotary_a = {
     .port = DEVICE_DT_GET(DT_NODELABEL(gpio0)),
@@ -43,9 +44,14 @@ static int detent_counter = 0;
 static bool usb_suspended = false;
 static struct gpio_callback button_cb_data;
 static int64_t last_activity_time = 0;
+static struct k_work_delayable long_press_work;
+static bool button_pressed_flag = false;
+static int64_t button_press_time = 0;
 
-// HID Report Descriptor for Consumer Control (volume/media keys)
+// HID Report Descriptor for Consumer Control (volume/media keys) and System
+// Control (suspend)
 static const uint8_t hid_report_desc[] = {
+    // Consumer Control Collection
     0x05, 0x0C,       // USAGE_PAGE (Consumer Devices)
     0x09, 0x01,       // USAGE (Consumer Control)
     0xA1, 0x01,       // COLLECTION (Application)
@@ -57,30 +63,106 @@ static const uint8_t hid_report_desc[] = {
     0x75, 0x10,       //   REPORT_SIZE (16)
     0x95, 0x01,       //   REPORT_COUNT (1)
     0x81, 0x00,       //   INPUT (Data,Array,Abs)
-    0xC0              // END_COLLECTION
+    0xC0,             // END_COLLECTION
+
+    // System Control Collection
+    0x05, 0x01, // USAGE_PAGE (Generic Desktop)
+    0x09, 0x80, // USAGE (System Control)
+    0xA1, 0x01, // COLLECTION (Application)
+    0x85, 0x02, //   REPORT_ID (2)
+    0x15, 0x00, //   LOGICAL_MINIMUM (0)
+    0x25, 0x01, //   LOGICAL_MAXIMUM (1)
+    0x09, 0x82, //   USAGE (System Sleep)
+    0x75, 0x01, //   REPORT_SIZE (1)
+    0x95, 0x01, //   REPORT_COUNT (1)
+    0x81, 0x06, //   INPUT (Data,Var,Rel)
+    0x75, 0x07, //   REPORT_SIZE (7)
+    0x95, 0x01, //   REPORT_COUNT (1)
+    0x81, 0x03, //   INPUT (Cnst,Var,Abs)
+    0xC0        // END_COLLECTION
 };
 
-void button_pressed(const struct device *dev, struct gpio_callback *cb,
-                    uint32_t pins) {
-  DEBUG_PRINT("Button pressed! USB suspended: %s, Remote wakeup enabled: %s\n",
-              usb_suspended ? "YES" : "NO",
-              usb_get_remote_wakeup_status() ? "YES" : "NO");
+void send_suspend_command(void) {
+  if (!usb_suspended) {
+    DEBUG_PRINT("Sending system suspend command\n");
+    uint8_t suspend_report[] = {0x02,
+                                0x01}; // Report ID 2, System Sleep bit set
+    hid_int_ep_write(hid_dev, suspend_report, sizeof(suspend_report), NULL);
 
-  if (usb_suspended && usb_get_remote_wakeup_status()) {
-    DEBUG_PRINT("Attempting USB wake-up...\n");
-    int ret = usb_wakeup_request();
-    if (ret == 0) {
-      DEBUG_PRINT("USB wake-up request successful!\n");
+    // Send key release after short delay
+    k_sleep(K_MSEC(15));
+    uint8_t release_report[] = {0x02,
+                                0x00}; // Report ID 2, System Sleep bit clear
+    hid_int_ep_write(hid_dev, release_report, sizeof(release_report), NULL);
+
+    // Visual feedback - LED blinks 5 times rapidly
+    for (int i = 0; i < 5; i++) {
       gpio_pin_set_dt(&led, 1);
-      k_sleep(K_MSEC(100));
+      k_sleep(K_MSEC(50));
       gpio_pin_set_dt(&led, 0);
-    } else {
-      DEBUG_PRINT("USB wake-up request failed: %d\n", ret);
+      k_sleep(K_MSEC(50));
     }
+
+    last_activity_time = k_uptime_get();
+    DEBUG_PRINT("System suspend command sent\n");
   } else {
-    DEBUG_PRINT(
-        "Wake-up conditions not met - device not suspended or wake-up not "
-        "enabled\n");
+    DEBUG_PRINT("USB suspended - suspend command ignored\n");
+  }
+}
+
+void long_press_work_handler(struct k_work *work) {
+  if (button_pressed_flag) {
+    DEBUG_PRINT("Long press detected - triggering suspend\n");
+    send_suspend_command();
+  }
+}
+
+void button_interrupt_handler(const struct device *dev,
+                              struct gpio_callback *cb, uint32_t pins) {
+  int button_state = gpio_pin_get_dt(&button);
+  int64_t current_time = k_uptime_get();
+
+  if (button_state == 0) { // Button pressed (active low with pull-up)
+    DEBUG_PRINT("Button pressed at %lld ms\n", current_time);
+    button_pressed_flag = true;
+    button_press_time = current_time;
+
+    // Schedule long press work
+    k_work_schedule(&long_press_work, K_MSEC(LONG_PRESS_DURATION_MS));
+
+  } else { // Button released
+    int64_t press_duration = current_time - button_press_time;
+    DEBUG_PRINT("Button released after %lld ms\n", press_duration);
+
+    button_pressed_flag = false;
+
+    // Cancel long press work
+    k_work_cancel_delayable(&long_press_work);
+
+    // Handle short press (wake-up functionality)
+    if (press_duration < LONG_PRESS_DURATION_MS) {
+      DEBUG_PRINT("Short press detected - checking wake-up conditions\n");
+      DEBUG_PRINT("USB suspended: %s, Remote wakeup enabled: %s\n",
+                  usb_suspended ? "YES" : "NO",
+                  usb_get_remote_wakeup_status() ? "YES" : "NO");
+
+      if (usb_suspended && usb_get_remote_wakeup_status()) {
+        DEBUG_PRINT("Attempting USB wake-up...\n");
+        int ret = usb_wakeup_request();
+        if (ret == 0) {
+          DEBUG_PRINT("USB wake-up request successful!\n");
+          gpio_pin_set_dt(&led, 1);
+          k_sleep(K_MSEC(100));
+          gpio_pin_set_dt(&led, 0);
+        } else {
+          DEBUG_PRINT("USB wake-up request failed: %d\n", ret);
+        }
+      } else {
+        DEBUG_PRINT(
+            "Wake-up conditions not met - device not suspended or wake-up not "
+            "enabled\n");
+      }
+    }
   }
 }
 void usb_status_cb(enum usb_dc_status_code status, const uint8_t *param) {
@@ -179,7 +261,7 @@ int main(void) {
     DEBUG_PRINT("ERROR: Failed to configure rotary_b: %d\n", ret);
     return -1;
   }
-  ret = gpio_pin_configure_dt(&button, GPIO_INPUT | GPIO_INT_EDGE_FALLING);
+  ret = gpio_pin_configure_dt(&button, GPIO_INPUT | GPIO_INT_EDGE_BOTH);
   if (ret != 0) {
     DEBUG_PRINT("ERROR: Failed to configure button: %d\n", ret);
     return -1;
@@ -190,6 +272,10 @@ int main(void) {
     return -1;
   }
   DEBUG_PRINT("GPIO pins configured successfully\n");
+
+  // Initialize long press work
+  k_work_init_delayable(&long_press_work, long_press_work_handler);
+  DEBUG_PRINT("Long press work initialized\n");
 
   // Initial LED test - blink 3 times to show device is working
   DEBUG_PRINT("Starting LED blink test\n");
@@ -204,14 +290,15 @@ int main(void) {
   DEBUG_PRINT("LED blink test completed\n");
 
   // Configure button interrupt
-  gpio_init_callback(&button_cb_data, button_pressed, BIT(button.pin));
+  gpio_init_callback(&button_cb_data, button_interrupt_handler,
+                     BIT(button.pin));
   ret = gpio_add_callback(button.port, &button_cb_data);
   if (ret != 0) {
     DEBUG_PRINT("ERROR: Failed to add button callback: %d\n", ret);
     return -1;
   }
 
-  ret = gpio_pin_interrupt_configure_dt(&button, GPIO_INT_EDGE_FALLING);
+  ret = gpio_pin_interrupt_configure_dt(&button, GPIO_INT_EDGE_BOTH);
   if (ret != 0) {
     DEBUG_PRINT("ERROR: Failed to configure button interrupt: %d\n", ret);
     return -1;
