@@ -42,6 +42,7 @@ static int led_blink_count = 0;
 static int detent_counter = 0;
 static bool usb_suspended = false;
 static struct gpio_callback button_cb_data;
+static int64_t last_activity_time = 0;
 
 // HID Report Descriptor for Consumer Control (volume/media keys)
 static const uint8_t hid_report_desc[] = {
@@ -93,13 +94,24 @@ void usb_status_cb(enum usb_dc_status_code status, const uint8_t *param) {
     DEBUG_PRINT("USB RESUMED - wake-up no longer needed\n");
     break;
   case USB_DC_CONFIGURED:
-    DEBUG_PRINT("USB CONFIGURED\n");
+    DEBUG_PRINT("USB CONFIGURED - device ready, remote wakeup: %s\n",
+                usb_get_remote_wakeup_status() ? "YES" : "NO");
+    // Just reset activity time, let keep-alive mechanism handle staying awake
+    last_activity_time = k_uptime_get();
     break;
   case USB_DC_CONNECTED:
-    DEBUG_PRINT("USB CONNECTED\n");
+    DEBUG_PRINT("USB CONNECTED - enumeration starting\n");
     break;
   case USB_DC_DISCONNECTED:
-    DEBUG_PRINT("USB DISCONNECTED\n");
+    usb_suspended = false;
+    last_activity_time = 0;
+    DEBUG_PRINT("USB DISCONNECTED - resetting state\n");
+    break;
+  case USB_DC_RESET:
+    usb_suspended = false;
+    last_activity_time = 0;
+    DEBUG_PRINT("USB RESET - reinitializing, remote wakeup: %s\n",
+                usb_get_remote_wakeup_status() ? "YES" : "NO");
     break;
   default:
     DEBUG_PRINT("USB status change: %d\n", status);
@@ -107,11 +119,18 @@ void usb_status_cb(enum usb_dc_status_code status, const uint8_t *param) {
   }
 }
 
-void main(void) {
+void send_usb_keepalive(void) {
+  static uint8_t keepalive[] = {0x01, 0x00, 0x00};
+  hid_int_ep_write(hid_dev, keepalive, sizeof(keepalive), NULL);
+  last_activity_time = k_uptime_get();
+  DEBUG_PRINT("Sent USB keep-alive\n");
+}
+
+int main(void) {
   int ret;
 
-  // Small delay to let system stabilize
-  k_sleep(K_MSEC(1000));
+  // Small delay to let system stabilize before USB initialization
+  k_sleep(K_MSEC(100));
 
   DEBUG_PRINT("=== WKNB USB Wake-up Device Starting ===\n");
   DEBUG_PRINT("Starting wknb initialization...\n");
@@ -120,7 +139,7 @@ void main(void) {
   hid_dev = device_get_binding("HID_0");
   if (hid_dev == NULL) {
     DEBUG_PRINT("ERROR: Failed to get HID device binding\n");
-    return;
+    return -1;
   }
   DEBUG_PRINT("HID device binding successful\n");
 
@@ -131,14 +150,14 @@ void main(void) {
   ret = usb_hid_init(hid_dev);
   if (ret != 0) {
     DEBUG_PRINT("ERROR: USB HID init failed: %d\n", ret);
-    return;
+    return -1;
   }
   DEBUG_PRINT("USB HID init successful\n");
 
   ret = usb_enable(usb_status_cb);
   if (ret != 0) {
     DEBUG_PRINT("ERROR: USB enable failed: %d\n", ret);
-    return;
+    return -1;
   }
   DEBUG_PRINT("USB enabled successfully\n");
 
@@ -146,45 +165,31 @@ void main(void) {
   if (!device_is_ready(rotary_a.port) || !device_is_ready(rotary_b.port) ||
       !device_is_ready(button.port) || !device_is_ready(led.port)) {
     DEBUG_PRINT("ERROR: GPIO devices not ready\n");
-    return;
+    return -1;
   }
   DEBUG_PRINT("GPIO devices ready\n");
 
   ret = gpio_pin_configure_dt(&rotary_a, GPIO_INPUT);
   if (ret != 0) {
     DEBUG_PRINT("ERROR: Failed to configure rotary_a: %d\n", ret);
-    return;
+    return -1;
   }
   ret = gpio_pin_configure_dt(&rotary_b, GPIO_INPUT);
   if (ret != 0) {
     DEBUG_PRINT("ERROR: Failed to configure rotary_b: %d\n", ret);
-    return;
+    return -1;
   }
   ret = gpio_pin_configure_dt(&button, GPIO_INPUT | GPIO_INT_EDGE_FALLING);
   if (ret != 0) {
     DEBUG_PRINT("ERROR: Failed to configure button: %d\n", ret);
-    return;
+    return -1;
   }
   ret = gpio_pin_configure_dt(&led, GPIO_OUTPUT_INACTIVE);
   if (ret != 0) {
     DEBUG_PRINT("ERROR: Failed to configure LED: %d\n", ret);
-    return;
+    return -1;
   }
   DEBUG_PRINT("GPIO pins configured successfully\n");
-
-  // Configure button interrupt
-  gpio_init_callback(&button_cb_data, button_pressed, BIT(button.pin));
-  ret = gpio_add_callback(button.port, &button_cb_data);
-  if (ret != 0) {
-    DEBUG_PRINT("ERROR: Failed to add button callback: %d\n", ret);
-    return;
-  }
-  ret = gpio_pin_interrupt_configure_dt(&button, GPIO_INT_EDGE_FALLING);
-  if (ret != 0) {
-    DEBUG_PRINT("ERROR: Failed to configure button interrupt: %d\n", ret);
-    return;
-  }
-  DEBUG_PRINT("Button interrupt configured successfully\n");
 
   // Initial LED test - blink 3 times to show device is working
   DEBUG_PRINT("Starting LED blink test\n");
@@ -194,8 +199,24 @@ void main(void) {
     k_sleep(K_MSEC(200));
     gpio_pin_set_dt(&led, 0);
     k_sleep(K_MSEC(200));
+    send_usb_keepalive();
   }
   DEBUG_PRINT("LED blink test completed\n");
+
+  // Configure button interrupt
+  gpio_init_callback(&button_cb_data, button_pressed, BIT(button.pin));
+  ret = gpio_add_callback(button.port, &button_cb_data);
+  if (ret != 0) {
+    DEBUG_PRINT("ERROR: Failed to add button callback: %d\n", ret);
+    return -1;
+  }
+
+  ret = gpio_pin_interrupt_configure_dt(&button, GPIO_INT_EDGE_FALLING);
+  if (ret != 0) {
+    DEBUG_PRINT("ERROR: Failed to configure button interrupt: %d\n", ret);
+    return -1;
+  }
+  DEBUG_PRINT("Button interrupt configured successfully\n");
 
   // Initialize rotary encoder state
   int a_val = gpio_pin_get_dt(&rotary_a);
@@ -208,6 +229,12 @@ void main(void) {
     a_val = gpio_pin_get_dt(&rotary_a);
     b_val = gpio_pin_get_dt(&rotary_b);
     int current_state = (b_val << 1) | a_val;
+
+    // Send periodic keep-alive to prevent USB suspend (every 500ms)
+    int64_t current_time = k_uptime_get();
+    if (!usb_suspended && (current_time - last_activity_time) > 500) {
+      send_usb_keepalive();
+    }
 
     if (current_state != last_rotary_state) {
       // Quadrature state transition table
@@ -228,26 +255,44 @@ void main(void) {
         if (detent_counter >= NUMBER_OF_DETENTS_PER_REPORT) {
           DEBUG_PRINT("Volume Up detected (detent_counter: %d)\n",
                       detent_counter);
-          uint8_t report[] = {0x01, 0xE9, 0x00}; // Volume Up
-          hid_int_ep_write(hid_dev, report, sizeof(report), NULL);
 
-          // Send key release after short delay
-          k_sleep(K_MSEC(15));
-          uint8_t release[] = {0x01, 0x00, 0x00};
-          hid_int_ep_write(hid_dev, release, sizeof(release), NULL);
+          // Only send volume commands when USB is not suspended
+          if (!usb_suspended) {
+            uint8_t report[] = {0x01, 0xE9, 0x00}; // Volume Up
+            hid_int_ep_write(hid_dev, report, sizeof(report), NULL);
+
+            // Send key release after short delay
+            k_sleep(K_MSEC(15));
+            uint8_t release[] = {0x01, 0x00, 0x00};
+            hid_int_ep_write(hid_dev, release, sizeof(release), NULL);
+
+            // Update activity time
+            last_activity_time = k_uptime_get();
+          } else {
+            DEBUG_PRINT("USB suspended - volume command ignored\n");
+          }
 
           // Reset counter by number of detents per report
           detent_counter -= NUMBER_OF_DETENTS_PER_REPORT;
         } else if (detent_counter <= -NUMBER_OF_DETENTS_PER_REPORT) {
           DEBUG_PRINT("Volume Down detected (detent_counter: %d)\n",
                       detent_counter);
-          uint8_t report[] = {0x01, 0xEA, 0x00}; // Volume Down
-          hid_int_ep_write(hid_dev, report, sizeof(report), NULL);
 
-          // Send key release after short delay
-          k_sleep(K_MSEC(15));
-          uint8_t release[] = {0x01, 0x00, 0x00};
-          hid_int_ep_write(hid_dev, release, sizeof(release), NULL);
+          // Only send volume commands when USB is not suspended
+          if (!usb_suspended) {
+            uint8_t report[] = {0x01, 0xEA, 0x00}; // Volume Down
+            hid_int_ep_write(hid_dev, report, sizeof(report), NULL);
+
+            // Send key release after short delay
+            k_sleep(K_MSEC(15));
+            uint8_t release[] = {0x01, 0x00, 0x00};
+            hid_int_ep_write(hid_dev, release, sizeof(release), NULL);
+
+            // Update activity time
+            last_activity_time = k_uptime_get();
+          } else {
+            DEBUG_PRINT("USB suspended - volume command ignored\n");
+          }
 
           // Reset counter by number of detents per report
           detent_counter += NUMBER_OF_DETENTS_PER_REPORT;
@@ -259,4 +304,6 @@ void main(void) {
 
     k_sleep(K_MSEC(10));
   }
+
+  return 0;
 }
