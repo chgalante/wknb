@@ -4,24 +4,15 @@ wknb is a wired USB volume control device that lets you adjust your computer's
 volume remotely using a rotary encoder. Perfect for controlling audio from your 
 couch while gaming or watching movies on a PC located in another room.
 
-## What It Does
-
-- **Volume Control**: Turn the rotary encoder to adjust your computer's volume up or down
-- **Smart Sensitivity**: Requires multiple encoder clicks before changing volume to prevent accidental adjustments
-- **Plug & Play**: Works as a standard USB HID device - no drivers needed
-
 ## Features
 
 - **Volume Control**: Turn the rotary encoder to adjust your computer's volume up or down
-- **USB Remote Wake-up**: Press the button to wake up your PC from sleep/suspend mode (fully implemented)
+- **USB Remote Wake-up**: Short button press wakes up your PC from sleep/suspend mode
+- **System Suspend**: Long button press (2+ seconds) puts your computer to sleep
 - **Smart Sensitivity**: Requires multiple encoder clicks before changing volume to prevent accidental adjustments
+- **Visual Feedback**: LED provides status indication for startup, wake-up, and suspend operations
 - **Plug & Play**: Works as a standard USB HID device - no drivers needed
 - **Auto Stay-Awake**: Device automatically maintains USB activity to keep volume controls responsive
-
-## Planned Features (Work in Progress)
-
-- Suspend/sleep your computer
-- Switch between video outputs
 
 ## Hardware Requirements
 
@@ -87,8 +78,12 @@ The device appears as a standard HID input device and works with Windows, macOS,
 
 - **Clockwise rotation**: Increases volume
 - **Counter-clockwise rotation**: Decreases volume
-- **Button press**: Wakes up PC from sleep/suspend (when USB remote wake-up is enabled by the host)
-- **LED indicator**: Blinks 3 times on startup, briefly lights up when wake-up is successful
+- **Short button press** (< 2 seconds): Wakes up PC from sleep/suspend (when USB remote wake-up is enabled by the host)
+- **Long button press** (≥ 2 seconds): Puts the computer to sleep/suspend
+- **LED indicator**: 
+  - Blinks 3 times on startup
+  - Brief flash when wake-up is successful
+  - Rapid 5 blinks when suspend command is sent
 - **Auto-active**: Volume controls work immediately after plugging in (no button press required)
 
 The device requires 6 encoder detents (clicks) before sending a volume command, preventing accidental volume changes from small movements.
