@@ -59,11 +59,11 @@ west build -b rpi_pico2/rp2350a/m33 app --pristine -- -DCONF_FILE=prj_release.co
 1. **Enter bootloader mode**: Hold the BOOTSEL button while connecting the Pico 2 to your computer
 2. **Flash the firmware**: Run the custom flash script
    ```bash
-   ./flash build/zephyr/zephyr.uf2
+   ./scripts/flash build/zephyr/zephyr.uf2
    ```
 3. **Verify**: The device should restart and the LED should blink on startup
 
-The custom `flash` script handles copying the UF2 file to the RP2350 bootloader mass storage device.
+The custom `scripts/flash` script handles copying the UF2 file to the RP2350 bootloader mass storage device.
 
 ## Setup
 
