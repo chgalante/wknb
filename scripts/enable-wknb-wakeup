@@ -1,0 +1,46 @@
+#!/bin/bash
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+UDEV_RULES_DIR="/etc/udev/rules.d"
+WKNB_RULE_FILE="50-wknb-wakeup.rules"
+SOURCE_FILE="$SCRIPT_DIR/resources/$WKNB_RULE_FILE"
+
+echo "Installing wknb wake-up udev rule..."
+
+# Check if running as root
+if [[ $EUID -ne 0 ]]; then
+   echo "Error: This script must be run as root (use sudo)" 
+   exit 1
+fi
+
+# Check if source file exists
+if [[ ! -f "$SOURCE_FILE" ]]; then
+    echo "Error: Source file $SOURCE_FILE not found"
+    exit 1
+fi
+
+# Copy the udev rule
+echo "Copying $WKNB_RULE_FILE to $UDEV_RULES_DIR/"
+cp "$SOURCE_FILE" "$UDEV_RULES_DIR/"
+
+# Set proper permissions
+chmod 644 "$UDEV_RULES_DIR/$WKNB_RULE_FILE"
+
+# Reload and trigger udev rules
+echo "Reloading udev rules..."
+udevadm control --reload-rules
+udevadm trigger
+
+echo ""
+echo "✓ wknb wake-up udev rule installed successfully!"
+echo ""
+echo "This udev rule enables the wknb device to wake up the host system from sleep."
+echo ""
+echo "IMPORTANT NOTES:"
+echo "• Your system's BIOS must be configured to enable 'USB Wake-up Events' or"
+echo "  'Wake on USB' to allow the system to wake from deep sleep states."
+echo ""
+echo "• To remove this udev rule later, run: sudo ./clean-udev-rules"
+echo ""
