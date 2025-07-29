@@ -4,7 +4,7 @@
 - **Setup**: `source ~/projects/wknb/.venv/bin/activate` (activate Python virtual environment)
 - **Debug Build**: `west build -b rpi_pico2/rp2350a/m33 app --pristine` (HID + CDC ACM console)
 - **Release Build**: `west build -b rpi_pico2/rp2350a/m33 app --pristine -- -DCONF_FILE=prj_release.conf -DDTC_OVERLAY_FILE=app_release.overlay` (HID only, no debug output)
-- **Flash**: `./flash build/zephyr/zephyr.uf2` (custom script for RP2350)
+- **Flash**: `./scripts/flash build/zephyr/zephyr.uf2` (custom script for RP2350)
 
 ## Code Style (follows Zephyr conventions)
 - **Formatting**: Use `.clang-format` (Linux kernel style, 100 char limit, tabs for indentation)
@@ -37,7 +37,7 @@
 - `app/app_release.overlay` - Release device tree overlay (HID only)
 - `app/CMakeLists.txt` - Build configuration
 - `build/` - Build artifacts (ninja-based)
-- `flash` - Custom flashing script for RP2350 bootloader
+- `scripts/flash` - Custom flashing script for RP2350 bootloader
 
 ## Testing
 - No automated tests configured - manual hardware testing required
