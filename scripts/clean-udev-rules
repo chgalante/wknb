@@ -1,0 +1,35 @@
+#!/bin/bash
+
+UDEV_RULES_DIR="/etc/udev/rules.d"
+WKNB_RULE_FILE="50-wknb-wakeup.rules"
+
+echo "Cleaning up wknb udev rule..."
+
+# Check if running as root
+if [[ $EUID -ne 0 ]]; then
+   echo "Error: This script must be run as root (use sudo)" 
+   exit 1
+fi
+
+# Remove wknb wake-up rule if it exists
+if [[ -f "$UDEV_RULES_DIR/$WKNB_RULE_FILE" ]]; then
+    echo "Removing $WKNB_RULE_FILE"
+    if rm "$UDEV_RULES_DIR/$WKNB_RULE_FILE"; then
+        # Reload udev rules after removal
+        echo "Reloading udev rules..."
+        udevadm control --reload-rules
+        udevadm trigger
+        
+        echo ""
+        echo "✓ Successfully removed wknb wake-up udev rule!"
+        echo ""
+        echo "The wknb wake-up rule (50-wknb-wakeup.rules) has been cleaned up."
+    else
+        echo "Error: Failed to remove $WKNB_RULE_FILE"
+        exit 1
+    fi
+else
+    echo "No wknb udev rule found to remove."
+fi
+
+echo ""
